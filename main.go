@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"go.starlark.net/lib/time"
 )
 
 type Block struct {
@@ -40,6 +41,31 @@ type Blockchain struct {
 
 var Blockchain *Blockchain
 
+func (b *Block) generateHash() {
+	bytes, _ := json.Marshal(b.Data)
+	data := string(b.Pos) + b.TimeStamp + string(bytes) + b.PrevHash
+}
+
+func CreateBlock(prevBlock *Block, checkoutitem BookCheckout) *Block {
+	block := &Block{}
+	block.Pos = prevBlock.Pos + 1
+	block.TimeStamp = time.Now().String()
+	block.PrevHash = prevBlock.Hash
+	block.generateHash()
+
+	return block
+}
+
+func (bc *Blockchain) AddBlock(data BookCheckout) {
+	prevBlock := bc.blocks[len(bc.blocks)-1]
+
+	block := CreateBlock(prevBlock, data)
+
+	if validBlock(block, prevBlock) {
+		bc.blocks = append(bc.blocks, block)
+	}
+}
+
 func writeBlock(w http.ResponseWriter, r *http.Request) {
 	var checkoutitem BookCheckout
 
@@ -48,6 +74,8 @@ func writeBlock(w http.ResponseWriter, r *http.Request) {
 		log.Printf("could not write block: %v", err)
 		w.Write([]byte("could not write block"))
 	}
+
+	Blockchain.AddBlock(checkoutitem)
 }
 
 func Newbook(w http.ResponseWriter, r *http.Request) {
