@@ -9,9 +9,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/mux"
-	"go.starlark.net/lib/time"
 )
 
 type Block struct {
@@ -41,7 +41,7 @@ type Blockchain struct {
 	blocks []*Block
 }
 
-var Blockchain *Blockchain
+var BlockChain *Blockchain
 
 func (b *Block) generateHash() {
 	bytes, _ := json.Marshal(b.Data)
@@ -72,6 +72,31 @@ func (bc *Blockchain) AddBlock(data BookCheckout) {
 	}
 }
 
+func validBlock(block, prevblock *Block) bool {
+	if prevblock.Hash != block.PrevHash {
+		return false
+	}
+
+	if !block.validateHash(block.Hash) {
+		return false
+	}
+
+	if prevblock.Pos+1 != block.Pos {
+		return false
+	}
+
+	return true
+}
+
+func (b *Block) validateHash(hash string) bool {
+	b.generateHash()
+	if b.Hash != hash {
+		return false
+	}
+
+	return true
+}
+
 func writeBlock(w http.ResponseWriter, r *http.Request) {
 	var checkoutitem BookCheckout
 
@@ -81,7 +106,7 @@ func writeBlock(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("could not write block"))
 	}
 
-	Blockchain.AddBlock(checkoutitem)
+	BlockChain.AddBlock(checkoutitem)
 }
 
 func Newbook(w http.ResponseWriter, r *http.Request) {
@@ -117,13 +142,34 @@ func NewBlockchain() *Blockchain {
 	return &Blockchain{[]*Block{GenesisBlock()}}
 }
 
+func getBlockchain(w http.ResponseWriter, r *http.Request) {
+	jbytes, err := json.MarshalIndent(BlockChain.blocks, "", " ")
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(err)
+		return
+	}
+
+	io.WriteString(w, string(jbytes))
+}
+
 func main() {
 
-	Blockchain = NewBlockchain()
+	BlockChain = NewBlockchain()
 	r := mux.NewRouter()
 	r.HandleFunc("/", getBlockchain).Methods("GET")
 	r.HandleFunc("/", writeBlock).Methods("POST")
 	r.HandleFunc("/new", Newbook).Methods("POST")
+
+	go func() {
+		for _, block := range BlockChain.blocks {
+			fmt.Printf("Prev. hash: %x\n", block.PrevHash)
+			bytes, _ := json.MarshalIndent(block.Data, "", " ")
+			fmt.Printf("Data: %v\n", string(bytes))
+			fmt.Printf("Hash: %x\n", block.Hash)
+			fmt.Println()
+		}
+	}()
 
 	log.Println("listening on port 3000")
 
